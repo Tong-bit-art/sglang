@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import torch
 
+from sglang.multimodal_gen import envs
 from sglang.multimodal_gen.configs.models.dits.minimax_h3 import MiniMaxH3DiTConfig
 from sglang.multimodal_gen.configs.models.encoders.minimax_h3_qwen3vl import (
     MiniMaxH3Qwen3VLConfig,
@@ -435,6 +436,20 @@ class FastH3OmniPipelineConfig(FastH3PipelineConfig):
 class PikaH3FlexPipelineConfig(MiniMaxH3PipelineConfig):
     """Pika H3 Flex: base MiniMax-H3 with Pika's six-step LoRA adapters."""
 
+    def validate_server_args(self, server_args) -> None:
+        if envs.SGLANG_CACHE_DIT_ENABLED:
+            raise ValueError(
+                "Pika H3 Flex requires all six denoiser evaluations; "
+                "disable SGLANG_CACHE_DIT_ENABLED"
+            )
+        if server_args.model_variant not in (None, "fl2va", "ref2va"):
+            raise ValueError("Pika H3 Flex model_variant must be fl2va or ref2va")
+        if server_args.lora_alpha not in (None, 128) or server_args.lora_scale != 1.0:
+            raise ValueError("Pika H3 Flex requires LoRA alpha 128 and scale 1.0")
+        if not server_args.is_arg_explicitly_set("lora_merge_mode"):
+            server_args.lora_merge_mode = "dynamic"
+        super().validate_server_args(server_args)
+
     def validate_quality_deployment(self, server_args) -> None:
         raise ValueError(
             'quality="high" is audited only for the base MiniMax-H3 50-step '
@@ -504,10 +519,5 @@ def register():
         pipeline_config_cls=PikaH3FlexPipelineConfig,
         hf_model_paths=[
             "Pika-Labs/Pika-H3-Flex",
-        ],
-        model_detectors=[
-            lambda model_id: (
-                "pikah3flex" in model_id.lower().replace("-", "").replace("_", "")
-            )
         ],
     )
